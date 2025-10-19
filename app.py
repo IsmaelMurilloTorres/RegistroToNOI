@@ -20,8 +20,9 @@ def conectar_a_gsheets(nombre_hoja):
         st.error(f"Error al conectar con Google Sheets: {e}")
         return None
 
-# --- MOTOR DE CÁLCULO TORNEO DE EQUIPOS ---
+# --- MOTORES DE CÁLCULO ---
 def calcular_todas_las_estadisticas(historial):
+    # (El código de esta función no cambia)
     if not historial: return {}
     clasificacion = {}
     rachas_actuales = {}
@@ -58,7 +59,6 @@ def calcular_todas_las_estadisticas(historial):
     if portador_trofeo and portador_trofeo in clasificacion: clasificacion[portador_trofeo]['Portador'] = True
     return clasificacion
 
-# --- MOTOR DE CÁLCULO ESTADÍSTICAS INDIVIDUALES ---
 def calcular_estadisticas_individuales(historial_goles):
     if not historial_goles: return {}
     goleadores = Counter(evento['Goleador'] for evento in historial_goles if evento.get('Goleador'))
@@ -71,36 +71,53 @@ def calcular_estadisticas_individuales(historial_goles):
         clasificacion_individual[jugador] = {'Goles': goles, 'Asistencias': asistencias, 'G/A': goles + asistencias}
     return clasificacion_individual
 
+def calcular_estadisticas_porteros(historial_porterias):
+    if not historial_porterias: return {}
+    porteros = Counter(evento['Portero'] for evento in historial_porterias if evento.get('Portero'))
+    return {portero: {'Porterías a 0': count} for portero, count in porteros.items()}
+
 # --- GESTIÓN DE DATOS ---
 def recargar_y_recalcular_todo():
+    # Carga datos del torneo
     sh_historial = conectar_a_gsheets("HistorialPartidos")
     historial = sh_historial.get_all_records() if sh_historial else []
     st.session_state.clasificacion = calcular_todas_las_estadisticas(historial)
     st.session_state.historial = historial
     st.session_state.portador_actual = next((eq for eq, stats in st.session_state.clasificacion.items() if stats.get('Portador')), None)
+    # Carga datos goles
     sh_goles = conectar_a_gsheets("HistorialGoles")
     historial_goles = sh_goles.get_all_records() if sh_goles else []
     st.session_state.clasificacion_individual = calcular_estadisticas_individuales(historial_goles)
     st.session_state.historial_goles = historial_goles
+    # Carga datos porterías a cero
+    sh_porterias = conectar_a_gsheets("HistorialPorteriasCero")
+    historial_porterias = sh_porterias.get_all_records() if sh_porterias else []
+    st.session_state.clasificacion_porteros = calcular_estadisticas_porteros(historial_porterias)
+    st.session_state.historial_porterias = historial_porterias
     st.session_state.app_cargada = True
 
 def guardar_datos_completos():
+    # Guardar clasificación de equipos
     sh_clasif = conectar_a_gsheets("Hoja1")
     if sh_clasif:
         clasif_para_guardar = st.session_state.get('clasificacion', {})
         encabezados = ["Equipo", "PJ", "V", "E", "D", "P", "PPP", "Partidos con Trofeo", "Mejor Racha", "Intentos", "Destronamientos", "Indice Destronamiento"]
-        datos = [encabezados]
-        for eq, stats in clasif_para_guardar.items():
-            datos.append([eq, stats['T'], stats['V'], stats['E'], stats['D'], stats['P'], stats['PPM'], stats['Partidos con Trofeo'], stats['Mejor Racha'], stats['Intentos'], stats['Destronamientos'], stats['Indice Destronamiento']])
+        datos = [encabezados] + [[eq, s['T'], s['V'], s['E'], s['D'], s['P'], s['PPM'], s['Partidos con Trofeo'], s['Mejor Racha'], s['Intentos'], s['Destronamientos'], s['Indice Destronamiento']] for eq, s in clasif_para_guardar.items()]
         sh_clasif.clear(); sh_clasif.update(datos, 'A1')
+    # Guardar clasificación individual
     sh_goleadores = conectar_a_gsheets("ClasificacionGoleadores")
     if sh_goleadores:
         clasif_ind_guardar = st.session_state.get('clasificacion_individual', {})
         encabezados = ["Jugador", "Goles", "Asistencias", "G/A"]
-        datos = [encabezados]
-        for jugador, stats in clasif_ind_guardar.items():
-            datos.append([jugador, stats['Goles'], stats['Asistencias'], stats['G/A']])
+        datos = [encabezados] + [[j, s['Goles'], s['Asistencias'], s['G/A']] for j, s in clasif_ind_guardar.items()]
         sh_goleadores.clear(); sh_goleadores.update(datos, 'A1')
+    # Guardar clasificación porteros
+    sh_porteros = conectar_a_gsheets("ClasificacionPorteros")
+    if sh_porteros:
+        clasif_porteros_guardar = st.session_state.get('clasificacion_porteros', {})
+        encabezados = ["Portero", "Porterías a 0"]
+        datos = [encabezados] + [[p, s['Porterías a 0']] for p, s in clasif_porteros_guardar.items()]
+        sh_porteros.clear(); sh_porteros.update(datos, 'A1')
 
 def guardar_evento_historial(sh_name, data_row):
     sh = conectar_a_gsheets(sh_name)
@@ -112,11 +129,11 @@ def reescribir_historial_completo(sh_name, nuevo_historial, encabezados):
         datos = [encabezados] + [list(row.values()) for row in nuevo_historial]
         sh.clear(); sh.update(datos, 'A1')
 
-# --- CARGA INICIAL DE LA APP ---
+# --- CARGA INICIAL ---
 if 'app_cargada' not in st.session_state:
     recargar_y_recalcular_todo()
 
-# --- PÁGINAS TORNEO EQUIPOS ---
+# --- DEFINICIÓN DE PÁGINAS ---
 def pagina_añadir_partido():
     st.header("⚽ Añadir Nuevo Partido")
     portador = st.session_state.get('portador_actual')
@@ -124,7 +141,7 @@ def pagina_añadir_partido():
     if historial:
         lp = historial[-1]
         msg = f"**{lp['Equipo Ganador']}** empató contra **{lp['Equipo Perdedor']}**" if lp['Resultado'] == "Empate" else f"**{lp['Equipo Ganador']}** ganó a **{lp['Equipo Perdedor']}**"
-        st.info(f"⏪ **Último partido (Nº {len(historial) - 1}):** {msg}")
+        st.info(f"⏪ **Último partido (Nº {len(historial)}):** {msg}")
     if not portador and not historial: st.info("No hay campeón actual. Se registrará el primer partido.")
     else: st.info(f"El campeón actual es: **{portador}** 👑")
     with st.form(key="partido_form"):
@@ -178,7 +195,6 @@ def pagina_eliminar_partido():
         recargar_y_recalcular_todo(); guardar_datos_completos()
         st.success("¡Partido eliminado!"); st.rerun()
 
-# --- PÁGINAS ESTADÍSTICAS INDIVIDUALES ---
 def pagina_añadir_gol():
     st.header("➕ Añadir Gol")
     with st.form(key="gol_form"):
@@ -217,10 +233,46 @@ def pagina_eliminar_gol():
         recargar_y_recalcular_todo(); guardar_datos_completos()
         st.success("¡Gol eliminado!"); st.rerun()
 
-# --- PÁGINA DE BORRADO GENERAL ---
+def pagina_añadir_porteria_cero():
+    st.header("🧤 Añadir Portería a 0")
+    with st.form(key="portero_form"):
+        portero = st.text_input("Nombre del Portero*")
+        submit = st.form_submit_button("Registrar Portería a 0")
+    if submit:
+        if not portero: st.error("El nombre del portero es obligatorio."); return
+        guardar_evento_historial("HistorialPorteriasCero", [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), portero])
+        recargar_y_recalcular_todo(); guardar_datos_completos()
+        st.success("¡Portería a 0 registrada!"); st.rerun()
+
+def pagina_clasificacion_porteros():
+    st.header("🥅 Clasificación de Porterías a 0")
+    clasif = st.session_state.get('clasificacion_porteros', {})
+    if not clasif: st.info("Aún no hay porterías a 0 registradas."); return
+    df = pd.DataFrame.from_dict(clasif, orient='index').sort_values(by="Porterías a 0", ascending=False)
+    st.dataframe(df)
+
+def pagina_historial_porterias_cero():
+    st.header("📋 Historial de Porterías a 0")
+    historial = st.session_state.get('historial_porterias', [])
+    if not historial: st.info("No hay registros."); return
+    st.dataframe(pd.DataFrame(historial).iloc[::-1])
+
+def pagina_eliminar_porteria_cero():
+    st.header("❌ Eliminar Portería a 0")
+    historial = st.session_state.get('historial_porterias', [])
+    if not historial: st.info("No hay registros para eliminar."); return
+    opciones = [f"{p['Fecha']}: {p['Portero']}" for p in historial]
+    seleccion = st.selectbox("Selecciona el registro a eliminar:", options=opciones, index=None)
+    if seleccion and st.button("Eliminar Registro Seleccionado"):
+        indice = opciones.index(seleccion)
+        nuevo_historial = [p for i, p in enumerate(historial) if i != indice]
+        reescribir_historial_completo("HistorialPorteriasCero", nuevo_historial, ["Fecha", "Portero"])
+        recargar_y_recalcular_todo(); guardar_datos_completos()
+        st.success("¡Registro eliminado!"); st.rerun()
+
 def pagina_borrar_datos():
     st.header("🗑️ Borrar Todo")
-    st.warning("⚠️ ¡Atención! Esto borrará TODOS los datos de equipos y jugadores.")
+    st.warning("⚠️ ¡Atención! Esto borrará TODOS los datos de equipos, goles y porteros.")
     confirmacion = st.text_input("Para confirmar, escribe 'BORRAR TODO' en mayúsculas:")
     if st.button("Borrar toda la información"):
         if confirmacion == "BORRAR TODO":
@@ -228,7 +280,9 @@ def pagina_borrar_datos():
                 "Hoja1": ["Equipo", "PJ", "V", "E", "D", "P", "PPP", "Partidos con Trofeo", "Mejor Racha", "Intentos", "Destronamientos", "Indice Destronamiento"],
                 "HistorialPartidos": ["Fecha", "Equipo Ganador", "Resultado", "Equipo Perdedor"],
                 "ClasificacionGoleadores": ["Jugador", "Goles", "Asistencias", "G/A"],
-                "HistorialGoles": ["Fecha", "Goleador", "Asistente"]
+                "HistorialGoles": ["Fecha", "Goleador", "Asistente"],
+                "ClasificacionPorteros": ["Portero", "Porterías a 0"],
+                "HistorialPorteriasCero": ["Fecha", "Portero"]
             }
             for nombre_hoja, encabezados in sheets_a_limpiar.items():
                 sh = conectar_a_gsheets(nombre_hoja)
@@ -237,7 +291,7 @@ def pagina_borrar_datos():
             st.success("¡Todos los datos han sido borrados!"); st.rerun()
         else: st.error("Confirmación incorrecta.")
 
-# --- MENÚ PRINCIPAL Y ROUTER DE PÁGINAS ---
+# --- MENÚ PRINCIPAL Y ROUTER ---
 st.set_page_config(page_title="ToNOI", page_icon="👑", layout="wide")
 st.title("👑 Torneo No Oficial de Inglaterra (ToNOI)")
 
@@ -253,23 +307,36 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("Estadísticas Individuales")
-    if st.button("Añadir Gol"): st.session_state.active_page = "Añadir Gol"
-    if st.button("Clasificación Individual"): st.session_state.active_page = "Clasificación Individual"
-    if st.button("Historial de Goles"): st.session_state.active_page = "Historial de Goles"
-    if st.button("Eliminar Gol"): st.session_state.active_page = "Eliminar Gol"
+    with st.expander("Goles / Asistencias"):
+        if st.button("Añadir Gol"): st.session_state.active_page = "Añadir Gol"
+        if st.button("Clasificación G/A"): st.session_state.active_page = "Clasificación G/A"
+        if st.button("Historial de Goles"): st.session_state.active_page = "Historial de Goles"
+        if st.button("Eliminar Gol"): st.session_state.active_page = "Eliminar Gol"
+    
+    with st.expander("Porterías a 0"):
+        if st.button("Añadir Portería a 0"): st.session_state.active_page = "Añadir Portería a 0"
+        if st.button("Clasificación Porteros"): st.session_state.active_page = "Clasificación Porteros"
+        if st.button("Historial de Porterías a 0"): st.session_state.active_page = "Historial Porterías a 0"
+        if st.button("Eliminar Portería a 0"): st.session_state.active_page = "Eliminar Portería a 0"
 
     st.markdown("---")
     st.header("Administración")
     if st.button("🗑️ Borrar Todos los Datos"): st.session_state.active_page = "Borrar Todo"
 
 # Ejecuta la página que está activa en la sesión
-pagina_actual = st.session_state.get('active_page', 'Añadir Partido')
-if pagina_actual == "Añadir Partido": pagina_añadir_partido()
-elif pagina_actual == "Clasificación General": pagina_mostrar_clasificacion()
-elif pagina_actual == "Historial de Partidos": pagina_historial_partidos()
-elif pagina_actual == "Eliminar Partido": pagina_eliminar_partido()
-elif pagina_actual == "Añadir Gol": pagina_añadir_gol()
-elif pagina_actual == "Clasificación Individual": pagina_clasificacion_individual()
-elif pagina_actual == "Historial de Goles": pagina_historial_goles()
-elif pagina_actual == "Eliminar Gol": pagina_eliminar_gol()
-elif pagina_actual == "Borrar Todo": pagina_borrar_datos()
+page_map = {
+    "Añadir Partido": pagina_añadir_partido,
+    "Clasificación General": pagina_mostrar_clasificacion,
+    "Historial de Partidos": pagina_historial_partidos,
+    "Eliminar Partido": pagina_eliminar_partido,
+    "Añadir Gol": pagina_añadir_gol,
+    "Clasificación G/A": pagina_clasificacion_individual,
+    "Historial de Goles": pagina_historial_goles,
+    "Eliminar Gol": pagina_eliminar_gol,
+    "Añadir Portería a 0": pagina_añadir_porteria_cero,
+    "Clasificación Porteros": pagina_clasificacion_porteros,
+    "Historial de Porterías a 0": pagina_historial_porterias_cero,
+    "Eliminar Portería a 0": pagina_eliminar_porteria_cero,
+    "Borrar Todo": pagina_borrar_datos,
+}
+page_map[st.session_state.active_page]()
