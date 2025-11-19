@@ -205,15 +205,10 @@ def guardar_datos_completos():
         st.warning("Los cambios se ven en la web (memoria temporal), pero NO se guardaron en la base de datos.")
 
 def guardar_evento_historial(sh_name, data_row):
-    # (Sin cambios aquí, esta función es genérica y guardará la fila con más datos)
     sh = conectar_a_gsheets(sh_name)
     if sh: sh.append_row(data_row, value_input_option='USER_ENTERED')
 
-# --- CAMBIO AQUÍ ---
-# He hecho esta función más robusta para que funcione con cualquier
-# número de columnas, basándose en los encabezados que se le pasan.
 def reescribir_historial_completo(sh_name, nuevo_historial, encabezados):
-    """Borra la hoja de historial y la reescribe con nuevos datos."""
     sh = conectar_a_gsheets(sh_name)
     if sh:
         datos = [encabezados]
@@ -285,7 +280,6 @@ def pagina_añadir_partido():
         st.success("¡Partido registrado!"); st.rerun()
 
 def pagina_mostrar_clasificacion():
-    # (Sin cambios)
     st.header("📊 Clasificación General de Equipos")
     clasif = st.session_state.get('clasificacion', {})
     if not clasif: st.info("Aún no hay datos."); return
@@ -309,7 +303,6 @@ def pagina_mostrar_clasificacion():
     df_display = df[columnas_existentes].rename(columns=nuevos_nombres)
     st.dataframe(df_display, hide_index=True)
 
-
 def pagina_historial_partidos():
     st.header("📜 Historial de Partidos")
     historial = st.session_state.get('historial', [])
@@ -329,7 +322,6 @@ def pagina_eliminar_partido():
         res_manual_str = f" ({p.get('ResultadoManual', '')})" if p.get('ResultadoManual') else ""
         opciones.append(f"Nº{i+1} ({p['Fecha']}): {p['Equipo Ganador']} vs {p['Equipo Perdedor']}{res_manual_str}")
     seleccion = st.selectbox("Selecciona el partido a eliminar:", options=opciones, index=None)
-    
     if seleccion and st.button("Eliminar Partido Seleccionado"):
         indice = opciones.index(seleccion)
         nuevo_historial = [p for i, p in enumerate(historial) if i != indice]
@@ -340,7 +332,6 @@ def pagina_eliminar_partido():
 
 # (El resto de funciones de Goles y Porteros siguen igual que antes)
 def pagina_añadir_gol():
-    # (Sin cambios)
     st.header("➕ Añadir Gol")
     with st.form(key="gol_form"):
         goleador = st.text_input("Goleador*")
@@ -353,7 +344,6 @@ def pagina_añadir_gol():
         st.success("¡Gol registrado!"); st.rerun()
 
 def pagina_clasificacion_individual():
-    # (Sin cambios)
     st.header("🏆 Clasificación de Goleadores")
     clasif = st.session_state.get('clasificacion_individual', {})
     if not clasif: st.info("Aún no hay estadísticas individuales."); return
@@ -361,14 +351,12 @@ def pagina_clasificacion_individual():
     st.dataframe(df)
 
 def pagina_historial_goles():
-    # (Sin cambios)
     st.header("📋 Historial de Goles")
     historial = st.session_state.get('historial_goles', [])
     if not historial: st.info("No hay goles registrados."); return
     st.dataframe(pd.DataFrame(historial).iloc[::-1])
 
 def pagina_eliminar_gol():
-    # (Sin cambios)
     st.header("❌ Eliminar un Gol")
     historial = st.session_state.get('historial_goles', [])
     if not historial: st.info("No hay goles para eliminar."); return
@@ -382,7 +370,6 @@ def pagina_eliminar_gol():
         st.success("¡Gol eliminado!"); st.rerun()
 
 def pagina_añadir_porteria_cero():
-    # (Sin cambios)
     st.header("🧤 Añadir Portería a 0")
     with st.form(key="portero_form"):
         portero = st.text_input("Nombre del Portero*")
@@ -394,7 +381,6 @@ def pagina_añadir_porteria_cero():
         st.success("¡Portería a 0 registrada!"); st.rerun()
 
 def pagina_clasificacion_porteros():
-    # (Sin cambios)
     st.header("🥅 Clasificación de Porterías a 0")
     clasif = st.session_state.get('clasificacion_porteros', {})
     if not clasif: st.info("Aún no hay porterías a 0 registradas."); return
@@ -402,14 +388,12 @@ def pagina_clasificacion_porteros():
     st.dataframe(df)
 
 def pagina_historial_porterias_cero():
-    # (Sin cambios)
     st.header("📋 Historial de Porterías a 0")
     historial = st.session_state.get('historial_porterias', [])
     if not historial: st.info("No hay registros."); return
     st.dataframe(pd.DataFrame(historial).iloc[::-1])
 
 def pagina_eliminar_porteria_cero():
-    # (Sin cambios)
     st.header("❌ Eliminar Portería a 0")
     historial = st.session_state.get('historial_porterias', [])
     if not historial: st.info("No hay registros para eliminar."); return
