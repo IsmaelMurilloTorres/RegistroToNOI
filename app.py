@@ -33,7 +33,7 @@ def calcular_todas_las_estadisticas(historial):
                 'V': 0, 'E': 0, 'D': 0, 'T': 0, 'P': 0, 'PPM': 0.0, 
                 'Mejor Racha': 0, 'Destronamientos': 0, 'Intentos': 0, 
                 'Indice Destronamiento': 0.0, 'Partidos con Trofeo': 0,
-                'GF': 0, 'GC': 0, 'DG': 0
+                'GF': 0, 'GC': 0, 'DG': 0  # Se inicializan a 0
             }
             rachas_actuales[equipo] = 0
             
@@ -41,7 +41,11 @@ def calcular_todas_las_estadisticas(historial):
         ganador = partido.get('Equipo Ganador')
         perdedor = partido.get('Equipo Perdedor')
         resultado = partido.get('Resultado')
-        resultado_manual = str(partido.get('ResultadoManual', ''))
+        
+        # INTENTO ROBUSTO DE LEER EL RESULTADO MANUAL
+        # Esto busca la clave 'ResultadoManual' o intenta buscar en las claves que contengan 'Manual'
+        clave_manual = next((k for k in partido.keys() if 'Manual' in k), 'ResultadoManual')
+        resultado_manual = str(partido.get(clave_manual, '')).strip()
         
         if not all([ganador, perdedor, resultado]): continue
         
@@ -70,18 +74,19 @@ def calcular_todas_las_estadisticas(historial):
                     portador_trofeo = aspirante
         if portador_trofeo: clasificacion[portador_trofeo]['Partidos con Trofeo'] += 1
 
-        # --- LÓGICA DE GOLES ---
-        try:
-            if "-" in resultado_manual:
+        # --- LÓGICA DE GOLES MEJORADA ---
+        if "-" in resultado_manual:
+            try:
                 partes = resultado_manual.split("-")
+                # Limpiamos espacios en blanco por si alguien puso " 2 - 1 "
                 g1 = int(partes[0].strip())
                 g2 = int(partes[1].strip())
                 
                 if resultado == "Empate":
                     goles_ganador = g1
-                    goles_perdedor = g1
+                    goles_perdedor = g1 # En empate asumimos g1=g2, o tomamos g1
                 else:
-                    # El ganador se lleva el número mayor, el perdedor el menor
+                    # Si es victoria, el ganador siempre tiene el max, el perdedor el min
                     goles_ganador = max(g1, g2)
                     goles_perdedor = min(g1, g2)
                 
@@ -90,8 +95,10 @@ def calcular_todas_las_estadisticas(historial):
                 
                 clasificacion[perdedor]['GF'] += goles_perdedor
                 clasificacion[perdedor]['GC'] += goles_ganador
-        except Exception:
-            pass
+            except ValueError:
+                # Esto ocurre si hay un guion pero no son números (ej: "A-B")
+                print(f"Error leyendo goles en partido {i}: {resultado_manual}")
+                pass
 
     # --- CÁLCULOS FINALES ---
     for equipo, stats in clasificacion.items():
@@ -99,6 +106,8 @@ def calcular_todas_las_estadisticas(historial):
         stats['P'] = (stats['V'] * 2) + (stats['E'] * 1)
         stats['PPM'] = (stats['P'] / stats['T']) if stats['T'] > 0 else 0.0
         if stats['Intentos'] > 0: stats['Indice Destronamiento'] = (stats['Destronamientos'] / stats['Intentos']) * 100
+        
+        # CALCULO FINAL DE DG
         stats['DG'] = stats['GF'] - stats['GC']
         
     if portador_trofeo and portador_trofeo in clasificacion: clasificacion[portador_trofeo]['Portador'] = True
