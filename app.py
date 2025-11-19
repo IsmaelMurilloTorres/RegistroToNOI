@@ -433,14 +433,17 @@ with st.sidebar:
         if st.button("Historial de Porterías a 0"): st.session_state.active_page = "Historial Porterías a 0"
         if st.button("Eliminar Portería a 0"): st.session_state.active_page = "Eliminar Portería a 0"
 
-    # BOTÓN TEMPORAL PARA ARREGLAR LA BASE DE DATOS (ÚSALO UNA VEZ Y BÓRRALO)
-    if st.button("🚨 RESETEAR CLASIFICACIÓN"):
-        sh = conectar_a_gsheets("Hoja1")
-        if sh: 
-            sh.clear()
-            st.cache_data.clear()
-            st.success("Hoja reseteada. Recarga la página.")
-
+    st.markdown("---")
+    st.header("Reparación")
+    if st.button("🚨 FORZAR ACTUALIZACIÓN TOTAL"):
+        # 1. Limpiamos la memoria de la app
+        st.cache_data.clear()
+        # 2. Recargamos datos y recalculamos estadísticas (incluyendo GF/GC)
+        recargar_y_recalcular_todo()
+        # 3. Sobrescribimos la Hoja1 de Google Sheets con los nuevos datos
+        guardar_datos_completos()
+        st.success("¡Sistema actualizado! Ahora deberían salir los goles.")
+        st.rerun()
     st.markdown("---")
     st.header("Administración")
     if st.button("🗑️ Borrar Todos los Datos"): st.session_state.active_page = "Borrar Todo"
