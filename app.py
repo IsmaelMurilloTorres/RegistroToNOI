@@ -6,7 +6,7 @@ from collections import Counter
 
 # --- CONFIGURACIÓN Y CONEXIÓN ---
 CREDS = st.secrets["gcp_creds"]
-ID_HOJA_CALCULO = "18x6wCv0E7FOpuvwZpWYRSFi56E-_RR2Gm1deHyCLo2Y" 
+ID_HOJA_CALCULO = "18x6wCv0E7FOpuvwZpWYRSFi56E-_RR2Gm1deHyCLo2Y"
 
 def conectar_a_gsheets(nombre_hoja):
     try:
@@ -29,7 +29,7 @@ def calcular_todas_las_estadisticas(historial):
     
     def asegurar_equipo(equipo):
         if equipo and equipo not in clasificacion:
-            # <-- CAMBIO: Añadidos GF, GC y DG a cero inicial
+            # CAMBIO: Inicializamos GF, GC y DG a 0
             clasificacion[equipo] = {
                 'V': 0, 'E': 0, 'D': 0, 'T': 0, 'P': 0, 'PPM': 0.0, 
                 'Mejor Racha': 0, 'Destronamientos': 0, 'Intentos': 0, 
@@ -42,25 +42,25 @@ def calcular_todas_las_estadisticas(historial):
         ganador = partido.get('Equipo Ganador')
         perdedor = partido.get('Equipo Perdedor')
         resultado = partido.get('Resultado')
-        resultado_manual = str(partido.get('ResultadoManual', '')) # Asegurar string
+        # Obtenemos el resultado manual (ej: "2-1")
+        resultado_manual = str(partido.get('ResultadoManual', ''))
         
         if not all([ganador, perdedor, resultado]): continue
         
-        asegurar_equipo(ganador)
-        asegurar_equipo(perdedor)
+        asegurar_equipo(ganador); asegurar_equipo(perdedor)
         
-        # --- LÓGICA DE PUNTOS Y RACHAS ---
+        # --- Lógica de Puntos ---
         if resultado == "Empate": clasificacion[ganador]['E'] += 1
         else: clasificacion[ganador]['V'] += 1
-        
         clasificacion[perdedor]['D'] += 1
         
+        # --- Lógica de Rachas ---
         rachas_actuales[ganador] += 1
         if rachas_actuales[ganador] > clasificacion[ganador]['Mejor Racha']: 
             clasificacion[ganador]['Mejor Racha'] = rachas_actuales[ganador]
         rachas_actuales[perdedor] = 0
         
-        # --- LÓGICA DE CINTURÓN (CÁLCULO ORIGINAL) ---
+        # --- Lógica del Cinturón ---
         if i == 0: portador_trofeo = ganador
         else:
             portador_en_partido = portador_trofeo
@@ -70,40 +70,30 @@ def calcular_todas_las_estadisticas(historial):
                 if resultado == "Victoria" and ganador == aspirante:
                     clasificacion[aspirante]['Destronamientos'] += 1
                     portador_trofeo = aspirante
-        
         if portador_trofeo: clasificacion[portador_trofeo]['Partidos con Trofeo'] += 1
 
         # --- CAMBIO: LÓGICA DE GOLES ---
-        # Intentamos parsear el resultado manual (ej: "2-4")
-        goles_ganador = 0
-        goles_perdedor = 0
-        
         try:
             if "-" in resultado_manual:
                 partes = resultado_manual.split("-")
-                # Limpiamos espacios y convertimos a int
                 g1 = int(partes[0].strip())
                 g2 = int(partes[1].strip())
                 
                 if resultado == "Empate":
-                    # En empate, ambos suman lo mismo (cualquiera de los dos)
                     goles_ganador = g1
-                    goles_perdedor = g1 # o g2, son iguales
+                    goles_perdedor = g1
                 else:
-                    # En victoria, asumimos que el Ganador tiene el MAX y el Perdedor el MIN
+                    # El ganador se lleva el número mayor, el perdedor el menor
                     goles_ganador = max(g1, g2)
                     goles_perdedor = min(g1, g2)
                 
-                # Sumamos al histórico
                 clasificacion[ganador]['GF'] += goles_ganador
                 clasificacion[ganador]['GC'] += goles_perdedor
                 
                 clasificacion[perdedor]['GF'] += goles_perdedor
                 clasificacion[perdedor]['GC'] += goles_ganador
-                
         except Exception:
-            # Si el formato es incorrecto (ej: "Aplazado", o vacío), no sumamos goles pero no rompemos la app
-            pass
+            pass # Si el formato no es válido, ignoramos los goles de este partido
 
     # --- CÁLCULOS FINALES ---
     for equipo, stats in clasificacion.items():
@@ -111,8 +101,7 @@ def calcular_todas_las_estadisticas(historial):
         stats['P'] = (stats['V'] * 2) + (stats['E'] * 1)
         stats['PPM'] = (stats['P'] / stats['T']) if stats['T'] > 0 else 0.0
         if stats['Intentos'] > 0: stats['Indice Destronamiento'] = (stats['Destronamientos'] / stats['Intentos']) * 100
-        
-        # CAMBIO: Calcular Diferencia de Goles
+        # CAMBIO: Calcular Diferencia
         stats['DG'] = stats['GF'] - stats['GC']
         
     if portador_trofeo and portador_trofeo in clasificacion: clasificacion[portador_trofeo]['Portador'] = True
@@ -153,56 +142,39 @@ def recargar_y_recalcular_todo():
     st.session_state.app_cargada = True
 
 def guardar_datos_completos():
-    st.info("Iniciando guardado en Google Sheets...")
-    try:
-        # Guardar clasificación de equipos
-        sh_clasif = conectar_a_gsheets("Hoja1")
-        if sh_clasif:
-            clasif_para_guardar = st.session_state.get('clasificacion', {})
-            # <-- CAMBIO: Añadidos encabezados de Goles
-            encabezados = ["Equipo", "PJ", "V", "E", "D", "GF", "GC", "DG", "P", "PPP", "Partidos con Trofeo", "Mejor Racha", "Intentos", "Destronamientos", "Indice Destronamiento"]
-            
-            st.write("Preparando datos para Hoja1...")
-            datos = [encabezados]
-            for eq, s in clasif_para_guardar.items():
-                # Comprobación básica
-                if not all(k in s for k in ['T', 'V', 'E', 'D', 'P', 'PPM']):
-                    st.warning(f"El equipo {eq} tiene datos incompletos. Omitiendo.")
-                    continue
-                # <-- CAMBIO: Añadidos s['GF'], s['GC'], s['DG'] al guardado
-                datos.append([
-                    eq, s['T'], s['V'], s['E'], s['D'], 
-                    s['GF'], s['GC'], s['DG'],
-                    s['P'], s['PPM'], s['Partidos con Trofeo'], s['Mejor Racha'], s['Intentos'], s['Destronamientos'], s['Indice Destronamiento']
-                ])
-            
-            st.write(f"Intentando escribir {len(datos)} filas en Hoja1...")
-            sh_clasif.clear()
-            sh_clasif.update(datos, 'A1')
-            st.write("¡Éxito al escribir en Hoja1!")
-
-        # Guardar clasificación individual (Sin cambios)
-        sh_goleadores = conectar_a_gsheets("ClasificacionGoleadores")
-        if sh_goleadores:
-            clasif_ind_guardar = st.session_state.get('clasificacion_individual', {})
-            encabezados = ["Jugador", "Goles", "Asistencias", "G/A"]
-            datos = [encabezados] + [[j, s['Goles'], s['Asistencias'], s['G/A']] for j, s in clasif_ind_guardar.items()]
-            sh_goleadores.clear(); sh_goleadores.update(datos, 'A1')
-
-        # Guardar clasificación porteros (Sin cambios)
-        sh_porteros = conectar_a_gsheets("ClasificacionPorteros")
-        if sh_porteros:
-            clasif_porteros_guardar = st.session_state.get('clasificacion_porteros', {})
-            encabezados = ["Portero", "Porterías a 0"]
-            datos = [encabezados] + [[p, s['Porterías a 0']] for p, s in clasif_porteros_guardar.items()]
-            sh_porteros.clear(); sh_porteros.update(datos, 'A1')
-            
-        st.success("¡Datos guardados en Google Sheets correctamente!")
-
-    except Exception as e:
-        st.error(f"¡ERROR FATAL AL GUARDAR EN GOOGLE SHEETS!")
-        st.error(f"Detalle del error: {e}")
-        st.warning("Los cambios se ven en la web (memoria temporal), pero NO se guardaron en la base de datos.")
+    # Guardar clasificación de equipos
+    sh_clasif = conectar_a_gsheets("Hoja1")
+    if sh_clasif:
+        clasif_para_guardar = st.session_state.get('clasificacion', {})
+        # CAMBIO: Encabezados incluyen Goles
+        encabezados = ["Equipo", "PJ", "V", "E", "D", "GF", "GC", "DG", "P", "PPP", "Partidos con Trofeo", "Mejor Racha", "Intentos", "Destronamientos", "Indice Destronamiento"]
+        
+        datos = [encabezados]
+        for eq, s in clasif_para_guardar.items():
+            if not all(k in s for k in ['T', 'V', 'E', 'D', 'P', 'PPM']): continue
+            # CAMBIO: Incluimos GF, GC, DG en la fila
+            datos.append([
+                eq, s['T'], s['V'], s['E'], s['D'], 
+                s['GF'], s['GC'], s['DG'],
+                s['P'], s['PPM'], s['Partidos con Trofeo'], s['Mejor Racha'], s['Intentos'], s['Destronamientos'], s['Indice Destronamiento']
+            ])
+        
+        sh_clasif.clear(); sh_clasif.update(datos, 'A1')
+        
+    # Guardar clasificación individual
+    sh_goleadores = conectar_a_gsheets("ClasificacionGoleadores")
+    if sh_goleadores:
+        clasif_ind_guardar = st.session_state.get('clasificacion_individual', {})
+        encabezados = ["Jugador", "Goles", "Asistencias", "G/A"]
+        datos = [encabezados] + [[j, s['Goles'], s['Asistencias'], s['G/A']] for j, s in clasif_ind_guardar.items()]
+        sh_goleadores.clear(); sh_goleadores.update(datos, 'A1')
+    # Guardar clasificación porteros
+    sh_porteros = conectar_a_gsheets("ClasificacionPorteros")
+    if sh_porteros:
+        clasif_porteros_guardar = st.session_state.get('clasificacion_porteros', {})
+        encabezados = ["Portero", "Porterías a 0"]
+        datos = [encabezados] + [[p, s['Porterías a 0']] for p, s in clasif_porteros_guardar.items()]
+        sh_porteros.clear(); sh_porteros.update(datos, 'A1')
 
 def guardar_evento_historial(sh_name, data_row):
     sh = conectar_a_gsheets(sh_name)
@@ -240,9 +212,10 @@ def pagina_añadir_partido():
     historial = st.session_state.get('historial', [])
     if historial:
         lp = historial[-1]
-        resultado_manual_str = f" ({lp.get('ResultadoManual', '')})" if lp.get('ResultadoManual') else ""
+        # CAMBIO: Mostrar resultado manual si existe
+        res_manual_str = f" ({lp.get('ResultadoManual', '')})" if lp.get('ResultadoManual') else ""
         msg = f"**{lp['Equipo Ganador']}** empató contra **{lp['Equipo Perdedor']}**" if lp['Resultado'] == "Empate" else f"**{lp['Equipo Ganador']}** ganó a **{lp['Equipo Perdedor']}**"
-        st.info(f"⏪ **Último partido (Nº {len(historial)}):** {msg}{resultado_manual_str}")
+        st.info(f"⏪ **Último partido (Nº {len(historial)}):** {msg}{res_manual_str}")
     
     if not portador and not historial: st.info("No hay campeón actual. Se registrará el primer partido.")
     else: st.info(f"El campeón actual es: **{portador}** 👑")
@@ -254,6 +227,7 @@ def pagina_añadir_partido():
         else:
             ganador, perdedor = st.text_input("Equipo A"), st.text_input("Equipo B")
         
+        # CAMBIO: Input para Resultado Manual
         resultado_manual_input = st.text_input("Resultado Numérico (Ej: 2-1, 1-1)", "") 
         submit = st.form_submit_button("Registrar Partido")
         
@@ -268,6 +242,7 @@ def pagina_añadir_partido():
             ganador, perdedor, resultado_final = portador, aspirante, "Empate"
             st.warning(f"Empate: {portador} retiene el título y suma 1 punto.")
         
+        # CAMBIO: Guardar fila con ResultadoManual
         fila_para_guardar = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
             ganador, 
@@ -289,9 +264,9 @@ def pagina_mostrar_clasificacion():
     df['PPM'] = df['PPM'].map('{:,.2f}'.format)
     df['Indice Destronamiento'] = df['Indice Destronamiento'].map('{:,.2f}%'.format)
     
-    # <-- CAMBIO: Nuevo orden de visualización incluyendo Goles
-    nuevo_orden_display = ["Pos.", "Equipo", "T", "V", "E", "D", "GF", "GC", "DG", "P", "PPM", "Partidos con Trofeo", "Mejor Racha", "Intentos", "Destronamientos", "Indice Destronamiento"]
-    nuevos_nombres = {
+    # CAMBIO: Nuevo orden de columnas con Goles
+    nuevo_orden = ["Pos.", "Equipo", "T", "V", "E", "D", "GF", "GC", "DG", "P", "PPM", "Partidos con Trofeo", "Mejor Racha", "Intentos", "Destronamientos", "Indice Destronamiento"]
+    nombres = {
         "T": "PJ", "V": "V", "E": "E", "D": "D", 
         "GF": "GF", "GC": "GC", "DG": "DG",
         "P": "P", "PPM": "PPP",
@@ -299,8 +274,8 @@ def pagina_mostrar_clasificacion():
         "Intentos": "Intentos", "Destronamientos": "Destronamientos", "Indice Destronamiento": "Índice Éxito"
     }
     
-    columnas_existentes = [col for col in nuevo_orden_display if col in df.columns]
-    df_display = df[columnas_existentes].rename(columns=nuevos_nombres)
+    columnas_ok = [c for c in nuevo_orden if c in df.columns]
+    df_display = df[columnas_ok].rename(columns=nombres)
     st.dataframe(df_display, hide_index=True)
 
 def pagina_historial_partidos():
@@ -308,6 +283,7 @@ def pagina_historial_partidos():
     historial = st.session_state.get('historial', [])
     if not historial: st.info("No hay partidos registrados."); return
     df_historial = pd.DataFrame(historial)
+    # CAMBIO: Mostrar columna ResultadoManual
     columnas_historial = ["Fecha", "Equipo Ganador", "Resultado", "Equipo Perdedor", "ResultadoManual"]
     columnas_a_mostrar = [col for col in columnas_historial if col in df_historial.columns]
     df_display = df_historial[columnas_a_mostrar]
@@ -319,18 +295,20 @@ def pagina_eliminar_partido():
     if not historial: st.info("No hay partidos para eliminar."); return
     opciones = []
     for i, p in enumerate(historial):
+        # CAMBIO: Mostrar resultado manual en el selectbox
         res_manual_str = f" ({p.get('ResultadoManual', '')})" if p.get('ResultadoManual') else ""
         opciones.append(f"Nº{i+1} ({p['Fecha']}): {p['Equipo Ganador']} vs {p['Equipo Perdedor']}{res_manual_str}")
+    
     seleccion = st.selectbox("Selecciona el partido a eliminar:", options=opciones, index=None)
     if seleccion and st.button("Eliminar Partido Seleccionado"):
         indice = opciones.index(seleccion)
         nuevo_historial = [p for i, p in enumerate(historial) if i != indice]
+        # CAMBIO: Reescribir con la nueva columna
         encabezados_historial = ["Fecha", "Equipo Ganador", "Resultado", "Equipo Perdedor", "ResultadoManual"]
         reescribir_historial_completo("HistorialPartidos", nuevo_historial, encabezados_historial)
         recargar_y_recalcular_todo(); guardar_datos_completos()
         st.success("¡Partido eliminado!"); st.rerun()
 
-# (El resto de funciones de Goles y Porteros siguen igual que antes)
 def pagina_añadir_gol():
     st.header("➕ Añadir Gol")
     with st.form(key="gol_form"):
@@ -428,6 +406,9 @@ def pagina_borrar_datos():
         else: st.error("Confirmación incorrecta.")
 
 # --- MENÚ PRINCIPAL Y ROUTER ---
+st.set_page_config(page_title="ToNOI", page_icon="👑", layout="wide")
+st.title("👑 Torneo No Oficial de Inglaterra (ToNOI)")
+
 if 'active_page' not in st.session_state:
     st.session_state.active_page = "Añadir Partido"
 
@@ -471,5 +452,10 @@ page_map = {
     "Eliminar Portería a 0": pagina_eliminar_porteria_cero,
     "Borrar Todo": pagina_borrar_datos,
 }
-if st.session_state.active_page in page_map:
-    page_map[st.session_state.active_page]()
+
+pagina_actual = st.session_state.get('active_page', 'Añadir Partido')
+if pagina_actual not in page_map:
+    st.session_state.active_page = "Añadir Partido"
+    pagina_actual = "Añadir Partido"
+
+page_map[pagina_actual]()
